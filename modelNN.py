@@ -24,8 +24,11 @@ def train(config, model, train_loader):
     if config['device'] == 'cuda':
         model.cuda()
 
-    optimizer = torch.optim.RMSprop(model.parameters())
-    criterion = torch.nn.L1Loss()
+    if config['lr'] != -1:
+        optimizer = config['optim'](model.parameters(), lr=config['lr'])
+    else:
+        optimizer = config['optim'](model.parameters())
+    criterion = config['lossfn']()
 
     print("---- Starting training -----")
     model.train()
@@ -33,34 +36,37 @@ def train(config, model, train_loader):
         for batch, labels in train_loader:
             y_pred = model(batch)
             loss = criterion(y_pred, labels)
-            print(loss)
+            print(loss.item())
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
     print("---- Finished training ----")
 
-    return model, criterion
+    return model
 
-def test(config, model, criterion):
+def test(config, model, criterion, test_loader):
     print("----- Evaluation -----")
     model.eval()
     with torch.no_grad():
-        for idx, (batch, labels) in enumerate(test_loader()):
+        for idx, (batch, labels) in enumerate(test_loader):
             ypred = model(batch)
-            print("batch :{} loss :{}".format(idx, criterion(ypred, labels).item()))
+            print("batch :{} loss :{}".format(idx, criterion(ypred, labels)), ypred, labels)
 
 class network(torch.nn.Sequential):
     def __init__(self, config):
         super(network, self).__init__()
         self.dimensions = config['dims']
-        self.nlayers = len(self.dimensions)
+        self.nlayers = len(self.dimensions) - 2
 
         for idx, (din, dout) in enumerate(zip(self.dimensions[:-1], self.dimensions[1:])):
             self.add_module(str(idx), torch.nn.Linear(din, dout))
+            if idx == self.nlayers and config['op'] == 'none':
+                break
             self.add_module("activ"+str(idx), config['activation']())
 
     def forward(self, x):
+        x = x.view(x.size(0), -1)
         ypred = super().forward(x)
         return ypred
 
